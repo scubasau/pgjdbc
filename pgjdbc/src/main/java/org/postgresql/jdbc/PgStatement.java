@@ -735,10 +735,10 @@ public class PgStatement implements Statement, BaseStatement {
 
     boolean sameQueryAhead = queries.length > 1 && queries[0] == queries[1];
 
-    if (!sameQueryAhead
+    if ((!sameQueryAhead || m_prepareThreshold == 0)
         // If executing the same query twice in a batch, make sure the statement
-        // is server-prepared. In other words, "oneshot" only if the query is one in the batch
-        // or the queries are different
+        // is server-prepared unless explicitly disabled. In other words, "oneshot" only if 
+        // the query is one in the batch or the queries are different
         && isOneShotQuery(null)) {
       flags |= QueryExecutor.QUERY_ONESHOT;
     } else {
