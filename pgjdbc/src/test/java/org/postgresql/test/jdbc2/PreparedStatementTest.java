@@ -14,14 +14,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import org.postgresql.jdbc.PreferQueryMode;
-import org.postgresql.test.TestUtil;
-import org.postgresql.test.util.BrokenInputStream;
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -36,6 +28,15 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collection;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.postgresql.jdbc.PgConnection;
+import org.postgresql.jdbc.PgStatement;
+import org.postgresql.jdbc.PreferQueryMode;
+import org.postgresql.test.TestUtil;
+import org.postgresql.test.util.BrokenInputStream;
 
 
 @RunWith(Parameterized.class)
@@ -1011,6 +1012,64 @@ public class PreparedStatementTest extends BaseTest4 {
       assertEquals(2, rs.getInt(1));
       rs.close();
     }
+    pstmt.close();
+  }
+  
+  /**
+   * @throws SQLException
+   */
+  @Test
+  public void testBatchWithPrepareThreshold() throws SQLException {
+    if (((PgConnection)con).getForceBinary()) {
+      // this test is not applicable in forceBinary mode
+      assertTrue(true);
+      return;
+    }
+    
+    PreparedStatement pstmt = con.prepareStatement("CREATE temp TABLE batch_tab_threshold5 (id bigint, val bigint)");
+    pstmt.executeUpdate();
+    pstmt.close();
+
+    // When using a prepareThreshold of 5, a batch update should use server-side prepare
+    pstmt = con.prepareStatement("INSERT INTO batch_tab_threshold5 (id, val) VALUES (?,?)");
+    ((PgStatement) pstmt).setPrepareThreshold(5);
+    for (int p = 0; p < 5; p++) {
+      for (int i = 0; i <= 5; i++) {
+        pstmt.setLong(1, i);
+        pstmt.setLong(2, i);
+        pstmt.addBatch();
+      }
+      pstmt.executeBatch();
+    }
+    pstmt.close();
+    pstmt = con.prepareStatement("select count(*) from pg_prepared_statements where statement = 'INSERT INTO batch_tab_threshold5 (id, val) VALUES ($1,$2)'");
+    ResultSet rs = pstmt.executeQuery();
+    assertTrue(rs.next());
+    assertEquals(1, rs.getInt(1));
+    rs.close();
+    pstmt.close();
+    
+    pstmt = con.prepareStatement("CREATE temp TABLE batch_tab_threshold0 (id bigint, val bigint)");
+    pstmt.executeUpdate();
+    pstmt.close();
+    
+    // When using a prepareThreshold of 0, a batch update should not use server-side prepare
+    pstmt = con.prepareStatement("INSERT INTO batch_tab_threshold0 (id, val) VALUES (?,?)");
+    ((PgStatement) pstmt).setPrepareThreshold(0);
+    for (int p = 0; p < 5; p++) {
+      for (int i = 0; i <= 5; i++) {
+        pstmt.setLong(1, i);
+        pstmt.setLong(2, i);
+        pstmt.addBatch();
+      }
+      pstmt.executeBatch();
+    }
+    pstmt.close();
+    pstmt = con.prepareStatement("select count(*) from pg_prepared_statements where statement = 'INSERT INTO batch_tab_threshold0 (id, val) VALUES ($1,$2)'");
+    rs = pstmt.executeQuery();
+    assertTrue(rs.next());
+    assertEquals(0, rs.getInt(1));
+    rs.close();
     pstmt.close();
   }
 
